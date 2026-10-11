@@ -1,0 +1,4 @@
+google-adk>=2.0
+# The search and evaluation code from thai-rag-eval. For local development use:
+#   pip install -e ../thai-rag-eval
+thairag @ git+https://github.com/WISHERCARTs/thai-rag-eval.git@main
