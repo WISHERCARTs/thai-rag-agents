@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from thai_agents.agents import build_agents
+from thai_agents.env import load_env
 from thai_agents.retrieval import LazyKnowledgeBase
 from thai_agents.runner import ask_sync
 
@@ -35,6 +36,7 @@ def cmd_eval(args) -> int:
 
 
 def main(argv=None) -> int:
+    load_env()
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")

@@ -2,7 +2,7 @@
 
 A small multi-agent system, built with Google's [Agent Development Kit](https://google.github.io/adk-docs/) (ADK), that answers questions about Thai provinces, temples, parks and landmarks from Thai Wikipedia. It reuses the hybrid search from [thai-rag-eval](https://github.com/WISHERCARTs/thai-rag-eval) as its only tool, and it comes with a trace of every call and an evaluation set.
 
-> **Status:** the agent wiring, tools, tracing and evaluation code are tested with scripted models (44 tests, no API key needed). The agents have **not yet been run against the real Gemini API**, and the evaluation has not been run, so there are no result numbers here. They will be added after the first real run.
+> **Status:** the wiring, tools, tracing and evaluation code are covered by 46 tests that use scripted models (no API key needed). The agents have been run against the real Gemini API on **one question** (see the example below), and it behaved as designed. The 20-question evaluation has **not been run yet**, so there are no result numbers for it.
 
 ## What it does
 
@@ -34,16 +34,24 @@ flowchart TD
 
 ## Tracing
 
-`TracePlugin` is an ADK plugin that records every model call and tool call, including the calls an agent-as-tool makes inside itself, so the output reads as a call tree:
+`TracePlugin` is an ADK plugin that records every model call and tool call, including the calls an agent-as-tool makes inside itself, so the output reads as a call tree.
+
+Example: one real run of `python -m thai_agents ask "ดอกไม้ประจำจังหวัดน่านกับจังหวัดสุโขทัยต่างกันอย่างไร" --trace` (Gemini 2.5 Flash, 11 October 2026):
 
 ```
-- researcher('ดอกไม้ประจำจังหวัดน่านคืออะไร') 2.1s
-  - search_thai_wikipedia('ดอกไม้ประจำจังหวัดน่าน') 0.6s  -> 4 passages
-- fact_checker('...') 1.4s
-  - read_sources() 0.0s  -> 3 sources
+น่าน: เสี้ยวดอกขาว [S1]   สุโขทัย: ดอกบัวหลวง [S5]
+
+- researcher('ดอกไม้ประจำจังหวัดน่าน') 9.4s  -> ดอกไม้ประจำจังหวัดน่านคือ เสี้ยวดอกขาว [S1]
+  - search_thai_wikipedia('ดอกไม้ประจำจังหวัดน่าน') 5.5s  -> 4 passages
+- researcher('ดอกไม้ประจำจังหวัดสุโขทัย') 4.6s  -> ดอกไม้ประจำจังหวัดสุโขทัยคือ ดอกบัวหลวง [S5]
+  - search_thai_wikipedia('ดอกไม้ประจำจังหวัดสุโขทัย') 0.5s  -> 4 passages
+- fact_checker('...') 4.5s  -> OK
+  - read_sources() 0.0s  -> 7 sources
+
+model calls: coordinator 4, researcher 4, fact_checker 2 | 7,064 prompt + 227 output tokens | 25.8 s
 ```
 
-(Illustrative format; real timings will be recorded after the first real run.) `python -m thai_agents ask "..." --trace` prints it with a summary of model calls, tokens and seconds.
+The coordinator split the comparison into one researcher call per province, both answers match the article text, and the fact checker read all seven collected passages before replying OK. This is a single run, not a measurement: the first search was slow (5.5 s, which includes loading the index), and one run says nothing about how often the agents are right. That is what the evaluation below is for.
 
 ## Evaluation
 
@@ -71,7 +79,7 @@ Known limits: the same model family answers and judges; 20 questions is a small 
 
 ```bash
 pip install -r requirements-dev.txt     # or: pip install -e ../thai-rag-eval && pip install google-adk pytest
-pytest                                  # 44 tests, no API key needed
+pytest                                  # 46 tests, no API key needed
 
 cp .env.example .env                    # add GEMINI_API_KEY
 python -m thai_agents ask "ดอยอินทนนท์สูงกี่เมตร" --trace

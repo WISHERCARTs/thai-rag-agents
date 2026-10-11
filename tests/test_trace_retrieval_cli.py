@@ -127,3 +127,37 @@ def test_cli_reports_errors_with_a_failing_exit_code(monkeypatch, capsys):
     assert code == 1
     assert "quota exceeded" in captured.err
     assert "(no answer)" in captured.out
+
+
+def test_cli_loads_the_api_key_from_a_dotenv_file(monkeypatch, tmp_path, capsys):
+    (tmp_path / ".env").write_text("GEMINI_API_KEY=from-dotenv-file\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    seen = {}
+
+    def fake_ask(agent, question, **kwargs):
+        import os
+
+        seen["key"] = os.getenv("GEMINI_API_KEY")
+        return fake_result()
+
+    monkeypatch.setattr(cli, "build_agents", lambda *a, **k: object())
+    monkeypatch.setattr(cli, "ask_sync", fake_ask)
+
+    cli.main(["ask", "x"])
+
+    assert seen["key"] == "from-dotenv-file"
+
+
+def test_a_key_already_in_the_environment_beats_the_dotenv_file(monkeypatch, tmp_path):
+    (tmp_path / ".env").write_text("GEMINI_API_KEY=from-file\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GEMINI_API_KEY", "from-shell")
+
+    from thai_agents.env import load_env
+
+    load_env()
+
+    import os
+
+    assert os.environ["GEMINI_API_KEY"] == "from-shell"
