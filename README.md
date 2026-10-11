@@ -2,7 +2,7 @@
 
 A small multi-agent system, built with Google's [Agent Development Kit](https://google.github.io/adk-docs/) (ADK), that answers questions about Thai provinces, temples, parks and landmarks from Thai Wikipedia. It reuses the hybrid search from [thai-rag-eval](https://github.com/WISHERCARTs/thai-rag-eval) as its only tool, and it comes with a trace of every call and an evaluation set.
 
-> **Status:** the wiring, tools, tracing and evaluation code are covered by 54 tests that use scripted models (no API key needed). The 20-question evaluation has been run once against the real Gemini API: **17 of 20 answers were judged correct**. Read [the first run](#first-run-11-october-2026) before relying on that number: one miss is a reference problem, one is a real retrieval failure, and the faithfulness score is not reliable.
+> **Status:** the wiring, tools, tracing and evaluation code are covered by 54 tests that use scripted models (no API key needed). The 20-question evaluation has been run once against the real Gemini API: **17 of 20 answers were judged correct**, in both runs. Read [the first run](#first-run-11-october-2026) before relying on that number: one miss is a reference problem, one is a real retrieval failure, and the faithfulness score is not reliable. The [second run](#second-run-after-tightening-the-instruction-11-october-2026) fixed missing citations and skipped fact checks, without changing accuracy.
 
 ## What it does
 
@@ -95,12 +95,29 @@ The whole run used 117,029 tokens. The three unanswerable questions were refused
 - **c07, Udon Thani vs Nong Khai (reference: Nong Khai is 51 km farther): a real failure.** The agent found Udon Thani's 564 km but reported that Nong Khai's distance was not in the documents, although the article says 615 km. Checking afterwards with keyword search alone, that passage ranks 2nd for a query worded "ห่างจากกรุงเทพมหานครกี่กิโลเมตร" but 27th, or not at all, for "ระยะทาง..." wordings, so the result depends on how the researcher phrased its query. This run did not save the queries, so the exact wording is unknown. Results now record them.
 - **p01, Nan vs Yala (partial): borderline.** The agent gave Nan's area (11,472.07 km², the article says 11,472.076) and said Yala was not in the documents, which is the intended behaviour. It was judged wrong, probably by the exact-number rule. Counted as a miss.
 - **Faithfulness (0.7) is not reliable and is left out of the table.** It is judged only for answers that cite sources (10 of 17), and one "unfaithful" verdict (c02) came from my own bug: the answer cited `[S1, S2]` and the parser read only single `[S1]` references, so the judge saw one source instead of two. The parser is fixed (and tested) but the saved results were not re-scored. The other two verdicts (c07, p01) were not examined.
-- **Citations are often missing: only 10 of 17 answers cite a source, and 7 of the 8 single-fact answers have none.** The coordinator drops the `[S1]` on short answers although its instructions require it. Not fixed yet.
-- **The fact checker was skipped on two answered questions (s06, c08)** even though the instructions say to run it. One of the two is the wrong answer above.
+- **Citations are often missing: only 10 of 17 answers cite a source, and 7 of the 8 single-fact answers have none.** The coordinator drops the `[S1]` on short answers although its instructions require it. Fixed for run 2, see below.
+- **The fact checker was skipped on two answered questions (s06, c08)** even though the instructions say to run it. One of the two is the wrong answer above. Fixed for run 2, see below.
 
 ![One real run, traced](docs/trace.svg)
 
-Next: tighten the instruction so short answers keep their citations and the checker always runs, re-run, and compare against this baseline.
+### Second run, after tightening the instruction (11 October 2026)
+
+The only change was in the coordinator instruction: every answer must carry its `[S#]` references, even a one-sentence answer, and the fact checker must run whenever the draft states a fact. The questions, the references and the scoring were not touched. Raw output (now including search queries and sources) is in [evals/results/2026-10-11-run2](evals/results/2026-10-11-run2).
+
+| | run 1 | run 2 |
+|---|---|---|
+| answers judged correct | 17 / 20 | 17 / 20 |
+| answerable questions with a citation | 10 / 17 | **17 / 17** |
+| answerable questions the fact checker ran on | 15 / 17 | **17 / 17** |
+| unanswerable questions refused | 3 / 3 | 3 / 3 |
+| avg model calls / seconds per question | 7.7 / 19.6 | 8.1 / 22.0 |
+| tokens | 117,029 | 132,331 |
+
+- **The two process problems are fixed; accuracy did not move.** Citations and fact-checker use are now complete, at the cost of about 13% more tokens and 2 more seconds per question. The same three questions were missed, so the instruction change did not make the answers more correct and I am not claiming it did.
+- **c07 is still a retrieval failure, and the saved queries show where.** The researcher ran three searches (`ระยะทาง อุดรธานี กรุงเทพมหานคร`, `ระยะทางหนองคาย กรุงเทพมหานคร`, `ระยะทาง กรุงเทพ หนองคาย`) and still reported Nong Khai's distance as not found. This matches the earlier keyword check: "ระยะทาง..." wordings do not reach the passage that states 615 km. A fix would be in retrieval or in how the researcher words its queries, not in the coordinator.
+- **s06 and p01 fail for the reasons given above** (an inconsistent reference, and a decimal rounding the judge counted as wrong).
+- **Faithfulness is 15 of 17 judged answers (0.88), against 0.70 in run 1, but the two numbers are not comparable:** run 1 included the parser bug. The two unfaithful verdicts in run 2 are c03 and p01. c03's answer (Krabi 4,708 km², Trat 2,819 km²) matches the reference, so I suspect the judge there, but I did not examine it.
+- Still one run per setup: a difference of one question is within noise.
 
 Known limits: the same model family answers and judges; 20 questions and a single run is a small set with no measure of variance; the references come from Wikipedia text that can itself be inconsistent between sections (see s06).
 

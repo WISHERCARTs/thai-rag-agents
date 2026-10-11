@@ -1,0 +1,62 @@
+{
+  "overall": {
+    "questions": 20,
+    "correct": 0.85,
+    "faithful": 0.882,
+    "doc_recall": 1.0,
+    "decomposed": 0.95,
+    "used_fact_checker": 0.85,
+    "unknown_citations": 0,
+    "errors": 0,
+    "avg_model_calls": 8.1,
+    "avg_seconds": 22.0
+  },
+  "single": {
+    "questions": 8,
+    "correct": 0.875,
+    "faithful": 1.0,
+    "doc_recall": 1.0,
+    "decomposed": 1.0,
+    "used_fact_checker": 1.0,
+    "unknown_citations": 0,
+    "errors": 0,
+    "avg_model_calls": 7.1,
+    "avg_seconds": 19.8
+  },
+  "comparison": {
+    "questions": 8,
+    "correct": 0.875,
+    "faithful": 0.875,
+    "doc_recall": 1.0,
+    "decomposed": 1.0,
+    "used_fact_checker": 1.0,
+    "unknown_citations": 0,
+    "errors": 0,
+    "avg_model_calls": 10.1,
+    "avg_seconds": 27.4
+  },
+  "unanswerable": {
+    "questions": 3,
+    "correct": 1.0,
+    "faithful": null,
+    "doc_recall": null,
+    "decomposed": 0.667,
+    "used_fact_checker": 0.0,
+    "unknown_citations": 0,
+    "errors": 0,
+    "avg_model_calls": 3.7,
+    "avg_seconds": 7.2
+  },
+  "partial": {
+    "questions": 1,
+    "correct": 0.0,
+    "faithful": 0.0,
+    "doc_recall": 1.0,
+    "decomposed": 1.0,
+    "used_fact_checker": 1.0,
+    "unknown_citations": 0,
+    "errors": 0,
+    "avg_model_calls": 13.0,
+    "avg_seconds": 40.3
+  }
+}
