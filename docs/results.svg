@@ -53,5 +53,6 @@
     <text x="420" y="482">fact checker ran</text>
     <text x="610" y="482">answers with citations</text>
   </g>
-  <text x="40" y="528" font-size="12" fill="#5eead4">Gemini 2.5 Flash, 11 October 2026, one run, judged by Gemini. 117,029 tokens, 7.7 model calls and 19.6 s per question on average.</text>
+  <text x="40" y="520" font-size="12" fill="#5eead4">Gemini 2.5 Flash, 11 October 2026, one run, judged by Gemini.</text>
+  <text x="40" y="540" font-size="12" fill="#5eead4">117,029 tokens in total, 7.7 model calls and 19.6 s per question on average.</text>
 </svg>
