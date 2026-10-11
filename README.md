@@ -2,7 +2,7 @@
 
 A small multi-agent system, built with Google's [Agent Development Kit](https://google.github.io/adk-docs/) (ADK), that answers questions about Thai provinces, temples, parks and landmarks from Thai Wikipedia. It reuses the hybrid search from [thai-rag-eval](https://github.com/WISHERCARTs/thai-rag-eval) as its only tool, and it comes with a trace of every call and an evaluation set.
 
-> **Status:** the wiring, tools, tracing and evaluation code are covered by 46 tests that use scripted models (no API key needed). The agents have been run against the real Gemini API on **one question** (see the example below), and it behaved as designed. The 20-question evaluation has **not been run yet**, so there are no result numbers for it.
+> **Status:** the wiring, tools, tracing and evaluation code are covered by 54 tests that use scripted models (no API key needed). The 20-question evaluation has been run once against the real Gemini API: **17 of 20 answers were judged correct**. Read [the first run](#first-run-11-october-2026) before relying on that number: one miss is a reference problem, one is a real retrieval failure, and the faithfulness score is not reliable.
 
 ## What it does
 
@@ -73,13 +73,42 @@ python -m thai_agents eval            # prints the estimate and exits, nothing i
 python -m thai_agents eval --yes      # runs it and writes evals/results/
 ```
 
-Known limits: the same model family answers and judges; 20 questions is a small set; the references come from Wikipedia text that can itself be inconsistent between sections.
+### First run (11 October 2026)
+
+All 20 questions, Gemini 2.5 Flash for the agents and for the judge, one run. Raw output is in [evals/results/2026-10-11-run1](evals/results/2026-10-11-run1).
+
+![First evaluation run](docs/results.svg)
+
+| group | questions | correct | documents found | split into sub-questions | fact checker ran | avg model calls | avg seconds |
+|---|---|---|---|---|---|---|---|
+| single | 8 | 7 | 8 of 8 | 8 of 8 | 7 of 8 | 6.6 | 16.0 |
+| comparison | 8 | 7 | 8 of 8 | 8 of 8 | 7 of 8 | 9.5 | 25.9 |
+| unanswerable | 3 | 3 | – | 2 of 3 | 0 of 3 | 3.7 | 7.1 |
+| partial | 1 | 0 | 1 of 1 | 1 of 1 | 1 of 1 | 13.0 | 35.8 |
+| **all** | **20** | **17** | **17 of 17** | **19 of 20** | **15 of 20** | 7.7 | 19.6 |
+
+The whole run used 117,029 tokens. The three unanswerable questions were refused (one without searching at all). Both comparison cases the system got right needed two separate lookups, and it made them.
+
+**What the three misses and the other numbers actually show**
+
+- **s06, "how far is Nakhon Ratchasima from Bangkok" (reference 259 km): a reference problem, not a hallucination.** The article states 259 km in its introduction but also "about 256 km" in the road description and 264 km by train. The agent answered 256 km by road and 264 km by rail, both supported by the passages it found. The strict number rule counted it wrong, and I left the score as it was.
+- **c07, Udon Thani vs Nong Khai (reference: Nong Khai is 51 km farther): a real failure.** The agent found Udon Thani's 564 km but reported that Nong Khai's distance was not in the documents, although the article says 615 km. Checking afterwards with keyword search alone, that passage ranks 2nd for a query worded "ห่างจากกรุงเทพมหานครกี่กิโลเมตร" but 27th, or not at all, for "ระยะทาง..." wordings, so the result depends on how the researcher phrased its query. This run did not save the queries, so the exact wording is unknown. Results now record them.
+- **p01, Nan vs Yala (partial): borderline.** The agent gave Nan's area (11,472.07 km², the article says 11,472.076) and said Yala was not in the documents, which is the intended behaviour. It was judged wrong, probably by the exact-number rule. Counted as a miss.
+- **Faithfulness (0.7) is not reliable and is left out of the table.** It is judged only for answers that cite sources (10 of 17), and one "unfaithful" verdict (c02) came from my own bug: the answer cited `[S1, S2]` and the parser read only single `[S1]` references, so the judge saw one source instead of two. The parser is fixed (and tested) but the saved results were not re-scored. The other two verdicts (c07, p01) were not examined.
+- **Citations are often missing: only 10 of 17 answers cite a source, and 7 of the 8 single-fact answers have none.** The coordinator drops the `[S1]` on short answers although its instructions require it. Not fixed yet.
+- **The fact checker was skipped on two answered questions (s06, c08)** even though the instructions say to run it. One of the two is the wrong answer above.
+
+![One real run, traced](docs/trace.svg)
+
+Next: tighten the instruction so short answers keep their citations and the checker always runs, re-run, and compare against this baseline.
+
+Known limits: the same model family answers and judges; 20 questions and a single run is a small set with no measure of variance; the references come from Wikipedia text that can itself be inconsistent between sections (see s06).
 
 ## Run it
 
 ```bash
 pip install -r requirements-dev.txt     # or: pip install -e ../thai-rag-eval && pip install google-adk pytest
-pytest                                  # 46 tests, no API key needed
+pytest                                  # 54 tests, no API key needed
 
 cp .env.example .env                    # add GEMINI_API_KEY
 python -m thai_agents ask "ดอยอินทนนท์สูงกี่เมตร" --trace

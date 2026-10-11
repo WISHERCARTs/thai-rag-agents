@@ -46,6 +46,8 @@ class CaseScore:
     tokens: int
     seconds: float
     error: Optional[str]
+    search_queries: list  # what the researcher searched for, in order
+    sources: dict  # every passage collected, by reference id, for checking the judge by hand
 
 
 def load_cases(path: Path) -> list[Case]:
@@ -109,6 +111,8 @@ def score_case(case: Case, result: RunResult, judge: Judge) -> CaseScore:
         tokens=(trace.prompt_tokens + trace.output_tokens) if trace else 0,
         seconds=trace.summary()["seconds"] if trace else 0.0,
         error=result.error,
+        search_queries=[str(sp.args.get("query", "")) for sp in (trace.spans if trace else []) if sp.tool == "search_thai_wikipedia"],
+        sources=result.sources,
     )
 
 

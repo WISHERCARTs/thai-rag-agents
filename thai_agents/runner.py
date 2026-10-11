@@ -13,7 +13,17 @@ from thai_agents.tools import SOURCES_KEY
 from thai_agents.trace import TracePlugin
 
 APP_NAME = "thai_agents"
-CITATION = re.compile(r"\[(S\d+)\]")
+BRACKETS = re.compile(r"\[([^\[\]]*)\]")
+REFERENCE = re.compile(r"(?<![A-Za-z])S\d+(?![A-Za-z0-9])")
+
+
+def extract_refs(text: str) -> list[str]:
+    """Reference ids cited in a text, in order of first mention.
+
+    Handles every bracket style the model uses: [S1], [S1][S2] and [S1, S2].
+    """
+    refs = [ref for group in BRACKETS.findall(text) for ref in REFERENCE.findall(group)]
+    return list(dict.fromkeys(refs))
 
 
 @dataclass
@@ -27,13 +37,13 @@ class RunResult:
     @property
     def cited(self) -> list[dict]:
         """Sources the answer actually cites, in order of first mention."""
-        refs = list(dict.fromkeys(CITATION.findall(self.answer)))
+        refs = extract_refs(self.answer)
         return [{"ref": ref, **self.sources[ref]} for ref in refs if ref in self.sources]
 
     @property
     def unknown_citations(self) -> list[str]:
         """Reference ids in the answer that no search ever returned (made up by the model)."""
-        return [ref for ref in dict.fromkeys(CITATION.findall(self.answer)) if ref not in self.sources]
+        return [ref for ref in extract_refs(self.answer) if ref not in self.sources]
 
 
 async def ask(root_agent: BaseAgent, question: str, *, timeout: float = 180.0, user_id: str = "user") -> RunResult:

@@ -142,6 +142,8 @@ def test_results_are_saved_as_jsonl_json_and_markdown(kb, tmp_path):
 
     row = json.loads((tmp_path / "results.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert row["id"] == "c1" and row["correct"] is True
+    assert row["search_queries"] == ["ดอกไม้น่าน", "ดอกไม้ภูเก็ต"]  # saved so a miss can be traced to the query
+    assert {"S1", "S2"} <= set(row["sources"])
     assert json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))["overall"]["questions"] == 1
     assert (tmp_path / "summary.md").read_text(encoding="utf-8").startswith("| group |")
 

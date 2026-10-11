@@ -162,3 +162,31 @@ def test_fact_checker_issues_reach_the_coordinator(kb):
     ask_sync(build(kb, coordinator, researcher, checker), "ดอยอินทนนท์")
 
     assert "ISSUES" in coordinator.seen_text(2)  # the coordinator's last turn saw the checker's verdict
+
+
+@pytest.mark.parametrize(
+    "answer, expected",
+    [
+        ("ใกล้กว่า [S1] และ [S2]", ["S1", "S2"]),
+        ("ใกล้กว่า [S1][S2]", ["S1", "S2"]),
+        ("ใกล้กว่า [S1, S2] ส่วนอีกที่ [S5]", ["S1", "S2", "S5"]),
+        ("ใกล้กว่า [S1,S2]", ["S1", "S2"]),
+        ("ซ้ำ [S3] [S3]", ["S3"]),
+        ("ไม่มีอ้างอิง", []),
+        ("[SQL] และ [S12] และ [S1x]", ["S12"]),
+    ],
+)
+def test_extract_refs_handles_every_bracket_style(answer, expected):
+    from thai_agents.runner import extract_refs
+
+    assert extract_refs(answer) == expected
+
+
+def test_a_combined_citation_counts_every_source_it_names(kb):
+    from thai_agents.runner import RunResult
+
+    sources = {"S1": {"title": "ก", "section": "", "text": "x"}, "S2": {"title": "ข", "section": "", "text": "y"}}
+    result = RunResult("q", "ตอบ [S1, S2] และ [S9]", sources)
+
+    assert [s["ref"] for s in result.cited] == ["S1", "S2"]
+    assert result.unknown_citations == ["S9"]
