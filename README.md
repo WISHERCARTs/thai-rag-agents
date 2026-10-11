@@ -87,7 +87,7 @@ All 20 questions, Gemini 2.5 Flash for the agents and for the judge, one run. Ra
 | partial | 1 | 0 | 1 of 1 | 1 of 1 | 1 of 1 | 13.0 | 35.8 |
 | **all** | **20** | **17** | **17 of 17** | **19 of 20** | **15 of 20** | 7.7 | 19.6 |
 
-The whole run used 117,029 tokens. The three unanswerable questions were refused (one without searching at all). Both comparison cases the system got right needed two separate lookups, and it made them.
+The whole run used 117,029 tokens. The three unanswerable questions were refused (one without searching at all). All eight comparison questions were split into two researcher calls, one per place.
 
 **What the three misses and the other numbers actually show**
 
