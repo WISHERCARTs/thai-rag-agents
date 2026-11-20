@@ -37,7 +37,7 @@ class HybridKnowledgeBase:
 
 
 class LazyKnowledgeBase:
-    """Loads the index and creates the Gemini embedder on first use.
+    """Loads the index and creates the embedder on first use.
 
     The ADK web UI imports the agent module just to list it, so importing must not need
     an API key or a built index.
@@ -46,15 +46,42 @@ class LazyKnowledgeBase:
     def __init__(self):
         self._kb: HybridKnowledgeBase | None = None
 
-    def search(self, query: str, k: int = 4) -> list[Chunk]:
+    def load(self) -> None:
         if self._kb is None:
-            from thairag.gemini import GeminiEmbedder, make_client
-
             directory = index_dir()
             if not (directory / "chunks.jsonl").exists():
                 raise FileNotFoundError(
-                    f"No index at {directory}. Build it with `python -m thairag ingest` in thai-rag-eval, "
-                    "or set THAIRAG_INDEX."
+                    f"No index at {directory}. Build it with `python -m thai_agents build-index` "
+                    "(or `python -m thairag ingest` in thai-rag-eval), or set THAIRAG_INDEX."
                 )
-            self._kb = HybridKnowledgeBase.from_index(directory, GeminiEmbedder(make_client()))
+            self._kb = HybridKnowledgeBase.from_index(directory, make_embedder())
+
+    def search(self, query: str, k: int = 4) -> list[Chunk]:
+        self.load()
         return self._kb.search(query, k)
+
+    @property
+    def loaded(self) -> bool:
+        return self._kb is not None
+
+
+def make_embedder() -> Embedder:
+    """Query embeddings through the gateway when LLM_GATEWAY_URL is set, otherwise from Gemini directly."""
+    from thai_agents.gateway import GatewayEmbedder, gateway_settings
+
+    gateway = gateway_settings()
+    if gateway:
+        return GatewayEmbedder(*gateway)
+    from thairag.gemini import GeminiEmbedder, make_client
+
+    return GeminiEmbedder(make_client())
+
+
+def build_index_dir(corpus: Path, out_dir: Path, embedder: Embedder, max_chars: int = 700) -> int:
+    """Chunk the thai-rag-eval corpus and embed it, the same way `python -m thairag ingest` does."""
+    from thairag.index import build_index, chunk_corpus, load_corpus
+
+    chunks = chunk_corpus(load_corpus(corpus), max_chars=max_chars)
+    model = getattr(embedder, "model", "unknown")
+    build_index(chunks, embedder, out_dir, meta={"embed_model": model, "max_chars": max_chars})
+    return len(chunks)

@@ -1,0 +1,97 @@
+name: Deploy live demo
+
+# Builds the search index (once, then from the cache), builds the image and deploys the live
+# "ask it yourself" demo to Cloud Run. Every model call and embedding goes through thai-llm-gateway.
+# GitHub signs in to Google Cloud with Workload Identity Federation (scripts/gcp-setup.sh), so the
+# repo holds no Google credentials. The values below are identifiers, not secrets.
+on:
+  push:
+    branches: [main]
+    paths: ["thai_agents/**", "Dockerfile", "requirements.txt", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0786555487
+  GCP_WIF_PROVIDER: projects/85542351836/locations/global/workloadIdentityPools/llm-gateway-github/providers/rag-agents
+  GCP_DEPLOY_SA: rag-agents-deployer@gen-lang-client-0786555487.iam.gserviceaccount.com
+  REGION: asia-southeast1
+  SERVICE: thai-rag-agents
+  GATEWAY_URL: https://thai-llm-gateway-85542351836.asia-southeast1.run.app
+  ALLOWED_ORIGINS: https://my-portfolio-wish.vercel.app,http://localhost:3000
+  # Must match the thairag commit in requirements.txt: the index is built from that corpus.
+  THAIRAG_REF: 5b4271a0c9bafef9e2584a88a51e9172071c8a30
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # for Workload Identity Federation
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: WISHERCARTs/thai-rag-eval
+          ref: ${{ env.THAIRAG_REF }}
+          path: thai-rag-eval
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # The index only changes with the corpus, the chunking or the embedding model, so it is built
+      # once (about 35 embedding requests through the gateway) and restored from the cache after that.
+      - name: Restore the search index
+        id: index
+        uses: actions/cache@v4
+        with:
+          path: index
+          key: index-${{ hashFiles('thai-rag-eval/data/corpus.jsonl') }}-gemini-embedding-001-768-700-v1
+
+      - name: Build the search index
+        if: steps.index.outputs.cache-hit != 'true'
+        run: |
+          pip install -r requirements.txt
+          KEY="$(gcloud secrets versions access latest --secret RAG_AGENTS_GATEWAY_KEY --project "$GCP_PROJECT_ID")"
+          echo "::add-mask::$KEY"
+          LLM_GATEWAY_URL="$GATEWAY_URL" LLM_GATEWAY_KEY="$KEY" \
+            python -m thai_agents build-index --corpus thai-rag-eval/data/corpus.jsonl --out index
+
+      - name: Build and push the image
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/rag-agents/thai-rag-agents:${GITHUB_SHA}"
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy to Cloud Run
+        run: |
+          # One instance at most: a question takes about 20 s and 8 model calls, and the demo limits
+          # (5 questions per visitor per hour, 300 a day for the site) plus the gateway's daily budget cap the bill.
+          gcloud run deploy "$SERVICE" --image "$IMAGE" --region "$REGION" --quiet \
+            --service-account "rag-agents-runtime@${GCP_PROJECT_ID}.iam.gserviceaccount.com" \
+            --allow-unauthenticated \
+            --min-instances 0 --max-instances 1 --concurrency 8 --cpu 1 --memory 512Mi --timeout 180 --cpu-boost \
+            --set-env-vars "^@^LLM_GATEWAY_URL=${GATEWAY_URL}@ALLOWED_ORIGINS=${ALLOWED_ORIGINS}@MAX_CONCURRENT_RUNS=4" \
+            --set-secrets "LLM_GATEWAY_KEY=RAG_AGENTS_GATEWAY_KEY:latest,UPSTASH_REDIS_REST_URL=LLM_GATEWAY_UPSTASH_REDIS_REST_URL:latest,UPSTASH_REDIS_REST_TOKEN=LLM_GATEWAY_UPSTASH_REDIS_REST_TOKEN:latest,USER_HASH_SALT=LLM_GATEWAY_USER_HASH_SALT:latest"
+
+      - name: Smoke test
+        run: |
+          URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --format 'value(status.url)')"
+          curl -fsS --retry 5 --retry-all-errors --retry-delay 5 "$URL/health"
+          echo "::notice::Deployed $URL"
