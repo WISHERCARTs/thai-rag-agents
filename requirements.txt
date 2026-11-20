@@ -1,4 +1,9 @@
 google-adk>=2.0
-# The search and evaluation code from thai-rag-eval. For local development use:
+# The search and evaluation code from thai-rag-eval, pinned so a change there cannot change the
+# deployed search without a commit here. For local development use:
 #   pip install -e ../thai-rag-eval
-thairag @ git+https://github.com/WISHERCARTs/thai-rag-eval.git@main
+thairag @ https://github.com/WISHERCARTs/thai-rag-eval/archive/5b4271a0c9bafef9e2584a88a51e9172071c8a30.tar.gz
+# The live demo server (google-adk already brings these; listed because the server imports them).
+fastapi
+uvicorn
+httpx

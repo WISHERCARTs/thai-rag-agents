@@ -2,7 +2,7 @@
 
 A small multi-agent system, built with Google's [Agent Development Kit](https://google.github.io/adk-docs/) (ADK), that answers questions about Thai provinces, temples, parks and landmarks from Thai Wikipedia. It reuses the hybrid search from [thai-rag-eval](https://github.com/WISHERCARTs/thai-rag-eval) as its only tool, and it comes with a trace of every call and an evaluation set.
 
-> **Status:** the wiring, tools, tracing and evaluation code are covered by 54 tests that use scripted models (no API key needed). The 20-question evaluation has been run once against the real Gemini API: **17 of 20 answers were judged correct**, in both runs. Read [the first run](#first-run-11-october-2026) before relying on that number: one miss is a reference problem, one is a real retrieval failure, and the faithfulness score is not reliable. The [second run](#second-run-after-tightening-the-instruction-11-october-2026) fixed missing citations and skipped fact checks, without changing accuracy.
+> **Status:** the wiring, tools, tracing and evaluation code are covered by 75 tests that use scripted models (no API key needed). The 20-question evaluation has been run once against the real Gemini API: **17 of 20 answers were judged correct**, in both runs. Read [the first run](#first-run-11-october-2026) before relying on that number: one miss is a reference problem, one is a real retrieval failure, and the faithfulness score is not reliable. The [second run](#second-run-after-tightening-the-instruction-11-october-2026) fixed missing citations and skipped fact checks, without changing accuracy.
 
 ## What it does
 
@@ -121,18 +121,47 @@ The only change was in the coordinator instruction: every answer must carry its 
 
 Known limits: the same model family answers and judges; 20 questions and a single run is a small set with no measure of variance; the references come from Wikipedia text that can itself be inconsistent between sections (see s06).
 
+## Live demo through the LLM gateway
+
+The portfolio's "ask it yourself" button sends a question to `POST /ask` on a Cloud Run service ([thai_agents/server.py](thai_agents/server.py)). The service runs the three agents and returns the same `RecordedRun` shape the portfolio uses to replay the recorded runs, so one component plays both. A live run has no reference answer, so `reference` is empty and `correct` is `null`.
+
+```mermaid
+flowchart LR
+    B[Portfolio visitor] -->|POST /ask| S[thai-rag-agents<br/>Cloud Run]
+    S -->|chat, 8 calls per question| G[thai-llm-gateway<br/>Cloud Run]
+    S -->|query embeddings| G
+    G --> M[Gemini]
+    G -. spans, one session per question .-> L[Langfuse]
+```
+
+Every model call and every query embedding goes through [thai-llm-gateway](https://github.com/WISHERCARTs/thai-llm-gateway), which adds rate limits, a daily budget, PII redaction, prompt-injection checks, a cost log and traces. The service never holds a Gemini key.
+
+| Decision | Why |
+|---|---|
+| A small ADK model class (`GatewayLlm`) instead of LiteLLM | ADK speaks Gemini's request format and the gateway speaks OpenAI's. Translating messages, tool calls and tool results is about 150 lines ([thai_agents/gateway.py](thai_agents/gateway.py)) and is tested end to end against a fake gateway. LiteLLM would add a large dependency for one endpoint. |
+| Embeddings go through the gateway too, with Gemini task types | `gemini-embedding-001` gives different vectors for queries and documents. The gateway's `/v1/embeddings` passes `task_type` through, so the index (built with `RETRIEVAL_DOCUMENT`) and the queries (`RETRIEVAL_QUERY`) match. |
+| The demo counts questions, the gateway counts calls | One question is about eight model calls, so per-call limits would cut a visitor off mid-answer. The service allows 5 questions per visitor per hour, 15 per day and 300 per day for the whole site (counters in Upstash Redis, visitors kept only as a keyed hash of their IP). The gateway's daily budget still caps the cost behind that. |
+| Each question is one Langfuse session | The service sends `x-session-id` with every call, so the coordinator, researcher and fact checker calls of one question can be read together. |
+| The index is built in CI and copied into the image | `python -m thai_agents build-index` embeds the 1,698 passages through the gateway (about 35 requests). GitHub's cache keeps it until the corpus or the embedding settings change, and the container loads it at start-up, before the first visitor. |
+
+The guardrails were run on the real passages before this went live. That found a bug in the gateway: its Thai name rule redacted the end of every "มิถุนายน" (June) and words like "เจ้านาย", so the model would have read "มิถุ[PERSON_1]". It is fixed in the gateway, which now only takes a title that is a whole word.
+
+Deploying it: run [scripts/gcp-setup.sh](scripts/gcp-setup.sh) once in Cloud Shell, in the gateway's project. It creates the service accounts, a Workload Identity provider for this repository only, and copies the gateway's client key for this app into its own secret without showing it. After that, every merge to `main` that touches the app deploys it ([deploy.yml](.github/workflows/deploy.yml)).
+
+Run the server locally: `uvicorn thai_agents.server:main_app --factory --port 8081`, then `curl -X POST localhost:8081/ask -H 'content-type: application/json' -d '{"question": "ดอยอินทนนท์สูงกี่เมตร"}'`.
+
 ## Run it
 
 ```bash
 pip install -r requirements-dev.txt     # or: pip install -e ../thai-rag-eval && pip install google-adk pytest
-pytest                                  # 54 tests, no API key needed
+pytest                                  # 75 tests, no API key needed
 
 cp .env.example .env                    # add GEMINI_API_KEY
 python -m thai_agents ask "ดอยอินทนนท์สูงกี่เมตร" --trace
 adk web                                 # ADK's browser UI, run from the folder that contains thai_agents/
 ```
 
-The agents search the saved index from thai-rag-eval. Build it there once with `python -m thairag ingest`, or point `THAIRAG_INDEX` at it.
+The agents search the saved index from thai-rag-eval. Build it there once with `python -m thairag ingest`, or here with `python -m thai_agents build-index --out ../thai-rag-eval/index`, or point `THAIRAG_INDEX` at one. With `LLM_GATEWAY_URL` and `LLM_GATEWAY_KEY` set (see `.env.example`), `ask`, `adk web` and `build-index` go through the gateway instead of calling Gemini directly. The evaluation's judge still calls Gemini directly.
 
 ## Layout
 
@@ -143,6 +172,9 @@ The agents search the saved index from thai-rag-eval. Build it there once with `
 | `thai_agents/retrieval.py` | Hybrid search over the thai-rag-eval index, loaded lazily |
 | `thai_agents/trace.py` | The tracing plugin |
 | `thai_agents/runner.py` | Runs one question and collects the answer, cited sources and trace |
+| `thai_agents/gateway.py` | `GatewayLlm` and `GatewayEmbedder`: ADK and thairag through thai-llm-gateway |
+| `thai_agents/server.py`, `live.py`, `limits.py` | The live demo: `POST /ask`, the `RecordedRun` shape, per-visitor limits |
+| `Dockerfile`, `scripts/gcp-setup.sh`, `.github/workflows/deploy.yml` | Cloud Run deploy |
 | `thai_agents/evaluate.py`, `evals/` | Scoring and the question set |
 | `tests/` | Scripted-model tests |
 
