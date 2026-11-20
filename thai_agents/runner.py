@@ -33,6 +33,7 @@ class RunResult:
     sources: dict = field(default_factory=dict)  # every passage collected, by reference id
     trace: Optional[TracePlugin] = None
     error: Optional[str] = None
+    failure: Optional[BaseException] = None  # the exception behind `error`, for callers that map it
 
     @property
     def cited(self) -> list[dict]:
@@ -59,17 +60,17 @@ async def ask(root_agent: BaseAgent, question: str, *, timeout: float = 180.0, u
             if event.is_final_response() and event.content and event.content.parts:
                 texts.extend(p.text for p in event.content.parts if p.text and not getattr(p, "thought", False))
 
-    error = None
+    error, failure = None, None
     try:
         await asyncio.wait_for(consume(), timeout=timeout)
-    except asyncio.TimeoutError:
-        error = f"timed out after {timeout:.0f}s"
+    except asyncio.TimeoutError as exc:
+        error, failure = f"timed out after {timeout:.0f}s", exc
     except Exception as exc:  # surface model/API failures as a result, not a crash
-        error = f"{type(exc).__name__}: {exc}"
+        error, failure = f"{type(exc).__name__}: {exc}", exc
 
     stored = await runner.session_service.get_session(app_name=APP_NAME, user_id=user_id, session_id=session.id)
     sources = dict(stored.state.get(SOURCES_KEY) or {}) if stored else {}
-    return RunResult(question, "".join(texts).strip(), sources, trace, error)
+    return RunResult(question, "".join(texts).strip(), sources, trace, error, failure)
 
 
 def ask_sync(root_agent: BaseAgent, question: str, **kwargs) -> RunResult:

@@ -70,7 +70,7 @@ def test_lazy_knowledge_base_explains_a_missing_index(tmp_path, monkeypatch):
     with pytest.raises(FileNotFoundError) as info:
         LazyKnowledgeBase().search("น่าน")
 
-    assert "python -m thairag ingest" in str(info.value)
+    assert "python -m thai_agents build-index" in str(info.value)
 
 
 def test_importing_the_adk_entry_point_needs_no_key_or_index(monkeypatch):
@@ -161,3 +161,23 @@ def test_a_key_already_in_the_environment_beats_the_dotenv_file(monkeypatch, tmp
     import os
 
     assert os.environ["GEMINI_API_KEY"] == "from-shell"
+
+
+def test_build_index_dir_embeds_the_corpus_like_thairag_ingest(tmp_path, monkeypatch):
+    import json
+
+    from thai_agents.retrieval import build_index_dir
+
+    corpus = tmp_path / "corpus.jsonl"
+    docs = [{"doc_id": "1", "title": "จังหวัดน่าน", "text": "ดอกไม้ประจำจังหวัดน่านคือดอกเสี้ยวดอกขาว"},
+            {"doc_id": "2", "title": "จังหวัดภูเก็ต", "text": "ดอกไม้ประจำจังหวัดภูเก็ตคือดอกเฟื่องฟ้า"}]
+    corpus.write_text("\n".join(json.dumps(d, ensure_ascii=False) for d in docs), encoding="utf-8")
+    from thairag.index import chunk_corpus, load_corpus
+
+    n = build_index_dir(corpus, tmp_path / "index", FakeEmbedder())
+    assert n == len(chunk_corpus(load_corpus(corpus))) > 0
+
+    monkeypatch.setattr("thai_agents.retrieval.make_embedder", FakeEmbedder)
+    monkeypatch.setenv("THAIRAG_INDEX", str(tmp_path / "index"))
+    kb = LazyKnowledgeBase()
+    assert kb.search("ดอกไม้ประจำจังหวัด", 1) and kb.loaded

@@ -43,6 +43,17 @@ CHECKER_INSTRUCTION = f"""คุณเป็นผู้ตรวจข้อเ
 ห้ามเขียนคำตอบใหม่เอง ให้รายงานผลการตรวจเท่านั้น (ถ้า read_sources ได้ "empty" และร่างมีข้อเท็จจริง ให้ตอบ ISSUES)"""
 
 
+def default_model(name: str = "gemini-2.5-flash"):
+    """The model the agents use: through thai-llm-gateway when LLM_GATEWAY_URL is set, else Gemini directly."""
+    from thai_agents.gateway import GatewayLlm, gateway_settings
+
+    gateway = gateway_settings()
+    if gateway:
+        base_url, key = gateway
+        return GatewayLlm(model=name, base_url=base_url, api_key=key)
+    return name
+
+
 def build_agents(
     kb: KnowledgeBase,
     model="gemini-2.5-flash",

@@ -3,7 +3,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from thai_agents.agents import build_agents
+from thai_agents.agents import build_agents, default_model
 from thai_agents.env import load_env
 from thai_agents.retrieval import LazyKnowledgeBase
 from thai_agents.runner import ask_sync
@@ -22,7 +22,7 @@ def cmd_eval(args) -> int:
     from thairag.gemini import GeminiLLM, make_client
 
     judge = judge_from_llm(GeminiLLM(make_client(), temperature=0.0))
-    agents = build_agents(LazyKnowledgeBase(), model=args.model)
+    agents = build_agents(LazyKnowledgeBase(), model=default_model(args.model))
     scores = []
     for case in cases:
         score = score_case(case, ask_sync(agents, case.question), judge)
@@ -32,6 +32,16 @@ def cmd_eval(args) -> int:
     save_results(scores, args.out)
     print("\n" + summary_table(summarize(scores)))
     print(f"\nResults written to {args.out}/")
+    return 0
+
+
+def cmd_build_index(args) -> int:
+    from thai_agents.retrieval import build_index_dir, make_embedder
+
+    embedder = make_embedder()
+    print(f"Embedding {args.corpus} with {getattr(embedder, 'model', '?')} into {args.out}/ ...")
+    n = build_index_dir(args.corpus, args.out, embedder, max_chars=args.max_chars)
+    print(f"{n} chunks written to {args.out}/")
     return 0
 
 
@@ -53,11 +63,17 @@ def main(argv=None) -> int:
     e.add_argument("--limit", type=int, default=1000, help="only run the first N questions")
     e.add_argument("--model", default="gemini-2.5-flash")
     e.add_argument("--yes", action="store_true", help="confirm the Gemini calls; without it nothing runs")
+    b = sub.add_parser("build-index", help="embed the thai-rag-eval corpus into an index (calls the embedding API)")
+    b.add_argument("--corpus", type=Path, default=Path("../thai-rag-eval/data/corpus.jsonl"))
+    b.add_argument("--out", type=Path, default=Path("index"))
+    b.add_argument("--max-chars", type=int, default=700)
     args = parser.parse_args(argv)
     if args.command == "eval":
         return cmd_eval(args)
+    if args.command == "build-index":
+        return cmd_build_index(args)
 
-    result = ask_sync(build_agents(LazyKnowledgeBase(), model=args.model), args.question)
+    result = ask_sync(build_agents(LazyKnowledgeBase(), model=default_model(args.model)), args.question)
 
     if result.error:
         print(f"ERROR: {result.error}", file=sys.stderr)
